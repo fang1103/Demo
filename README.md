@@ -2,36 +2,36 @@
 
 This repository provides a modular Python prototype for studying cascading failures across interdependent infrastructure systems (gas, power, telecom, etc.) and testing resilience improvement actions.
 
-## What is included
+## Foundry-inspired architecture
 
-- **Unified network schema** for heterogeneous assets and relationships.
-- **Graph backend abstraction** with automatic NetworkX usage when available and a local fallback for constrained environments.
-- **Interdependency simulation** with pluggable coupling logic (`linear` and `threshold`).
-- **Operational model hooks** for service and health metrics.
-- **Interactive GIS dashboard** (Streamlit + Pydeck + Plotly).
-- **Decision layer** with both greedy and exact budget-constrained action prioritization.
+The demo is structured similarly to Palantir Foundry workflows:
 
-## Architecture
+1. **Ontology Layer**
+   - `OntologyObject` and `OntologyLink` define typed entities and relationships.
+   - `OntologyDataset` behaves like a curated ontology-backed dataset.
+2. **Pipeline Layer**
+   - `run_operational_pipeline(...)` is the orchestration transform that executes scenario simulation, resilience calculations, and decision optimization.
+3. **Application Layer**
+   - `app.py` is the interactive operational application consuming pipeline outputs.
+4. **Decision Layer**
+   - Optimization strategies (`greedy`, `exact`) mimic pluggable decision engines.
 
-- `src/multimodal_demo/schema.py`
-  - Generic `AssetNode` / `RelationshipEdge`
-  - `UnifiedNetwork` storage + backend export (`to_graph`)
-  - `build_demo_network()` seed topology
-- `src/multimodal_demo/graph.py`
-  - `GraphBackend` protocol
-  - `NetworkXAdapter` and `SimpleDiGraph` fallback
+## Modules
+
+- `src/multimodal_demo/ontology.py`
+  - Foundry-like ontology model + demo dataset
+- `src/multimodal_demo/pipeline.py`
+  - End-to-end orchestration pipeline
+- `src/multimodal_demo/application.py`
+  - Demo dataset/action-catalog loaders
 - `src/multimodal_demo/simulation.py`
-  - `FailureScenario`
-  - `LinearCouplingModel` and `ThresholdCouplingModel`
-  - `simulate_cascading_failures()`
+  - Interdependency and cascading-failure models
 - `src/multimodal_demo/operations.py`
-  - `NetworkOperationalModel`
-  - `resilience_curve()`
+  - Resilience and operational metrics
 - `src/multimodal_demo/optimization.py`
-  - `Action`
-  - `prioritize_actions()` with `greedy` and `exact`
-- `app.py`
-  - End-to-end interactive demo with model/optimizer selection
+  - Decision optimization strategies
+- `src/multimodal_demo/graph.py`
+  - Graph backend abstraction (NetworkX + fallback)
 
 ## Run locally
 

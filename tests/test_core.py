@@ -1,8 +1,10 @@
 import unittest
 
+from multimodal_demo.application import load_action_catalog, load_demo_dataset
 from multimodal_demo.graph import SimpleDiGraph
 from multimodal_demo.operations import NetworkOperationalModel, resilience_curve
 from multimodal_demo.optimization import Action, prioritize_actions
+from multimodal_demo.pipeline import PipelineInputs, run_operational_pipeline
 from multimodal_demo.schema import build_demo_network
 from multimodal_demo.simulation import FailureScenario, simulate_cascading_failures
 
@@ -63,6 +65,25 @@ class CoreDemoTests(unittest.TestCase):
         copied = graph.copy()
         copied.nodes["n1"]["condition"] = 0.0
         self.assertEqual(graph.nodes["n1"]["condition"], 1.0)
+
+    def test_foundry_like_pipeline_orchestrates_end_to_end(self):
+        output = run_operational_pipeline(
+            dataset=load_demo_dataset(),
+            actions_catalog=load_action_catalog(),
+            inputs=PipelineInputs(
+                failed_assets=["compressor_1"],
+                degradation_rate=0.5,
+                dependency_threshold=0.4,
+                max_steps=5,
+                coupling_mode="linear",
+                optimization_strategy="greedy",
+                budget=120,
+            ),
+            prefer_networkx=False,
+        )
+        self.assertTrue(output.resilience_points)
+        self.assertGreaterEqual(output.service_ratio, 0.0)
+        self.assertLessEqual(output.service_ratio, 1.0)
 
 
 if __name__ == "__main__":

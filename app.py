@@ -6,22 +6,21 @@ import pydeck as pdk
 import streamlit as st
 
 try:
-    from multimodal_demo.operations import resilience_curve
-    from multimodal_demo.optimization import Action, prioritize_actions
-    from multimodal_demo.schema import build_demo_network
-    from multimodal_demo.simulation import FailureScenario, simulate_cascading_failures
+    from multimodal_demo.application import load_action_catalog, load_demo_dataset
+    from multimodal_demo.pipeline import PipelineInputs, run_operational_pipeline
 except ModuleNotFoundError as exc:
     raise SystemExit("Package import failed. Run with `PYTHONPATH=src streamlit run app.py` or install with `pip install -e .`.") from exc
 
 st.set_page_config(page_title="Multimodal Resilience Demo", layout="wide")
 st.title("Multimodal Infrastructure Resilience Demo")
-st.caption("GIS + interdependency simulation + resilience analytics + action prioritization")
+st.caption("Foundry-inspired architecture: Ontology -> Pipeline -> Operational App")
 
-network = build_demo_network()
-graph = network.to_graph(prefer_networkx=True)
+dataset = load_demo_dataset()
+base_graph = dataset.to_graph(prefer_networkx=True)
+actions = load_action_catalog()
 
-st.sidebar.header("Scenario Controls")
-initial_failure = st.sidebar.multiselect("Initial failed assets", options=list(graph.nodes), default=["compressor_1"])
+st.sidebar.header("Pipeline Controls")
+initial_failure = st.sidebar.multiselect("Initial failed assets", options=list(base_graph.nodes), default=["compressor_1"])
 degradation_rate = st.sidebar.slider("Degradation rate", 0.05, 1.0, 0.35, 0.05)
 threshold = st.sidebar.slider("Failure threshold", 0.0, 1.0, 0.4, 0.05)
 max_steps = st.sidebar.slider("Simulation steps", 1, 12, 5)
@@ -29,33 +28,37 @@ coupling_mode = st.sidebar.selectbox("Interdependency logic", ["linear", "thresh
 optimizer = st.sidebar.selectbox("Optimization method", ["greedy", "exact"])
 budget = st.sidebar.slider("Response budget", 10, 300, 120)
 
-scenario = FailureScenario(
-    failed_nodes=initial_failure,
-    degradation_rate=degradation_rate,
-    dependency_threshold=threshold,
-    max_steps=max_steps,
-    coupling_mode=coupling_mode,
+result = run_operational_pipeline(
+    dataset=dataset,
+    actions_catalog=actions,
+    inputs=PipelineInputs(
+        failed_assets=initial_failure,
+        degradation_rate=degradation_rate,
+        dependency_threshold=threshold,
+        max_steps=max_steps,
+        coupling_mode=coupling_mode,
+        optimization_strategy=optimizer,
+        budget=budget,
+    ),
 )
-history = simulate_cascading_failures(graph.copy(), scenario)
-curve = resilience_curve(history, graph.copy())
 
 left, right = st.columns((1, 1))
 with left:
-    st.subheader("Map View")
+    st.subheader("Ontology Map")
     node_df = pd.DataFrame(
         [
             {
                 "id": node,
-                "label": data["label"],
-                "network_type": data["network_type"],
+                "name": data["name"],
+                "domain": data["domain"],
                 "lat": data["latitude"],
                 "lon": data["longitude"],
                 "condition": data.get("condition", 1.0),
             }
-            for node, data in graph.nodes(data=True)
+            for node, data in base_graph.nodes(data=True)
         ]
     )
-    final_failed = {node for nodes in history.values() for node in nodes}
+    final_failed = {n for nodes in result.simulation_history.values() for n in nodes}
     node_df.loc[node_df["id"].isin(final_failed), "condition"] = 0.0
 
     layer = pdk.Layer(
@@ -70,38 +73,19 @@ with left:
         pdk.Deck(
             initial_view_state=pdk.ViewState(latitude=node_df["lat"].mean(), longitude=node_df["lon"].mean(), zoom=6),
             layers=[layer],
-            tooltip={"text": "{label}\nType: {network_type}\nCondition: {condition}"},
+            tooltip={"text": "{name}\nDomain: {domain}\nCondition: {condition}"},
         )
     )
-    st.dataframe(node_df, use_container_width=True)
 
 with right:
-    st.subheader("Vulnerability + Resilience")
-    curve_df = pd.DataFrame(curve)
-    st.plotly_chart(px.line(curve_df, x="step", y=["service_ratio", "health_index"], markers=True, title="Resilience Curves"), use_container_width=True)
-    st.plotly_chart(
-        px.density_heatmap(
-            node_df[["id", "network_type", "condition"]],
-            x="network_type",
-            y="id",
-            z="condition",
-            color_continuous_scale="RdYlGn",
-            title="Asset Vulnerability Heatmap",
-        ),
-        use_container_width=True,
-    )
+    st.subheader("Resilience Curves")
+    curve_df = pd.DataFrame(result.resilience_points)
+    st.plotly_chart(px.line(curve_df, x="step", y=["service_ratio", "health_index"], markers=True), use_container_width=True)
+    st.metric("Final service ratio", f"{result.service_ratio:.2f}")
+    st.metric("Final health index", f"{result.health_index:.2f}")
 
-st.subheader("Decision-Making Layer (Design / Expansion / Response / Recovery)")
-actions = [
-    Action("Install compressor redundancy", cost=80, impact_score=65, phase="design"),
-    Action("Upgrade pipeline segment", cost=55, impact_score=40, phase="expansion"),
-    Action("Deploy mobile generators", cost=45, impact_score=52, phase="response"),
-    Action("Emergency telecom backup", cost=35, impact_score=34, phase="response"),
-    Action("Accelerated repair crews", cost=60, impact_score=58, phase="recovery"),
-]
-selected = prioritize_actions(actions, budget=budget, strategy=optimizer)
-st.write(f"Selected actions for budget **{budget}** using **{optimizer}** optimization:")
-st.table(pd.DataFrame([a.__dict__ for a in selected]))
+st.subheader("Decision Layer")
+st.table(pd.DataFrame([a.__dict__ for a in result.selected_actions]))
 
-with st.expander("Simulation event log"):
-    st.json(history)
+with st.expander("Pipeline event log"):
+    st.json(result.simulation_history)
